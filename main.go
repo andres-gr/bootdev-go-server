@@ -14,6 +14,8 @@ func main() {
 		rootDir = "."
 	)
 
+	conf := &apiConfig{}
+
 	idleConnsClosed := make(chan struct{})
 	mux := http.NewServeMux()
 	server := &http.Server{
@@ -21,8 +23,10 @@ func main() {
 		Handler: mux,
 	}
 
-	mux.Handle("/app/", http.StripPrefix("/app", http.FileServer(http.Dir(rootDir))))
-	mux.Handle("/healthz", HealthHandler{})
+	mux.Handle("/app/", conf.middlewareMetricsInc(AppHandler{rootDir: rootDir}))
+	mux.HandleFunc("/healthz", handleHealthz)
+	mux.HandleFunc("/metrics", conf.handleMetrics)
+	mux.HandleFunc("/reset", conf.handleReset)
 
 	go func() {
 		sigint := make(chan os.Signal, 1)
