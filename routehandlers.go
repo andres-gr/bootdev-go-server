@@ -24,10 +24,17 @@ func handleHealthz(w http.ResponseWriter, req *http.Request) {
 }
 
 func (conf *apiConfig) handleMetrics(w http.ResponseWriter, req *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
-	res := fmt.Sprintf("Hits: %d", conf.fileserverHits.Load())
+	res := fmt.Sprintf(`
+<html>
+  <body>
+    <h1>Welcome, Chirpy Admin</h1>
+    <p>Chirpy has been visited %d times!</p>
+  </body>
+</html>
+	`, conf.fileserverHits.Load())
 
 	if _, err := w.Write([]byte(res)); err != nil {
 		log.Printf("w.Write: %v", err)

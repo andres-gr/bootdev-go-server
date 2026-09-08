@@ -24,9 +24,9 @@ func main() {
 	}
 
 	mux.Handle("/app/", conf.middlewareMetricsInc(AppHandler{rootDir: rootDir}))
-	mux.HandleFunc("/healthz", handleHealthz)
-	mux.HandleFunc("/metrics", conf.handleMetrics)
-	mux.HandleFunc("/reset", conf.handleReset)
+	mux.HandleFunc("GET /api/healthz", handleHealthz)
+	mux.HandleFunc("GET /admin/metrics", conf.handleMetrics)
+	mux.HandleFunc("POST /admin/reset", conf.handleReset)
 
 	go func() {
 		sigint := make(chan os.Signal, 1)
