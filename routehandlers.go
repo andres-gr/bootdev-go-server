@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 )
 
 type AppHandler struct {
@@ -49,6 +50,12 @@ func (conf *apiConfig) handleReset(w http.ResponseWriter, req *http.Request) {
 	conf.fileserverHits.Store(0)
 }
 
+var invalidWords = map[string]struct{}{
+	"kerfuffle": {},
+	"sharbert":  {},
+	"fornax":    {},
+}
+
 func handleValidateChirp(w http.ResponseWriter, req *http.Request) {
 	defer func() {
 		if err := req.Body.Close(); err != nil {
@@ -77,10 +84,24 @@ func handleValidateChirp(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err := respondJSON(w, http.StatusOK, struct {
-		Valid bool `json:"valid"`
-	}{
-		Valid: true,
+	type result struct {
+		CleanedBody string `json:"cleaned_body"`
+	}
+
+	words := strings.Split(bod.Body, " ")
+
+	for i, w := range words {
+		if w == "" {
+			continue
+		}
+
+		if _, ok := invalidWords[strings.ToLower(w)]; ok {
+			words[i] = "****"
+		}
+	}
+
+	err := respondJSON(w, http.StatusOK, result{
+		CleanedBody: strings.Join(words, " "),
 	})
 	if err != nil {
 		log.Printf("respondJSON: %v", err)
