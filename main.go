@@ -24,7 +24,10 @@ func main() {
 	}
 
 	mux.Handle("/app/", conf.middlewareMetricsInc(AppHandler{rootDir: rootDir}))
+
 	mux.HandleFunc("GET /api/healthz", handleHealthz)
+	mux.HandleFunc("POST /api/validate_chirp", handleValidateChirp)
+
 	mux.HandleFunc("GET /admin/metrics", conf.handleMetrics)
 	mux.HandleFunc("POST /admin/reset", conf.handleReset)
 
