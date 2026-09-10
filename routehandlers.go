@@ -7,6 +7,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/google/uuid"
+
+	"github.com/andres-gr/go-server/internal/database"
 )
 
 type AppHandler struct {
@@ -72,57 +76,6 @@ func (conf *apiConfig) handleReset(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-var invalidWords = map[string]struct{}{
-	"kerfuffle": {},
-	"sharbert":  {},
-	"fornax":    {},
-}
-
-func handleValidateChirp(w http.ResponseWriter, req *http.Request) {
-	defer closeReqBody(req)
-
-	bod := struct {
-		Body string `json:"body"`
-	}{}
-
-	dec := json.NewDecoder(req.Body)
-	if err := dec.Decode(&bod); err != nil {
-		respondWithInternalError(w)
-		return
-	}
-
-	if len(bod.Body) > 140 {
-		err := respondError(w, http.StatusBadRequest, "Chirp is too long")
-		if err != nil {
-			log.Printf("respondError: %v", err)
-		}
-		return
-	}
-
-	type result struct {
-		CleanedBody string `json:"cleaned_body"`
-	}
-
-	words := strings.Split(bod.Body, " ")
-
-	for i, w := range words {
-		if w == "" {
-			continue
-		}
-
-		if _, ok := invalidWords[strings.ToLower(w)]; ok {
-			words[i] = "****"
-		}
-	}
-
-	err := respondJSON(w, http.StatusOK, result{
-		CleanedBody: strings.Join(words, " "),
-	})
-	if err != nil {
-		log.Printf("respondJSON: %v", err)
-	}
-}
-
 func (conf *apiConfig) handleCreateUser(w http.ResponseWriter, req *http.Request) {
 	defer closeReqBody(req)
 
@@ -154,6 +107,74 @@ func (conf *apiConfig) handleCreateUser(w http.ResponseWriter, req *http.Request
 	result = User(user)
 
 	err = respondJSON(w, http.StatusCreated, result)
+	if err != nil {
+		log.Printf("respondJSON: %v", err)
+	}
+}
+
+var invalidWords = map[string]struct{}{
+	"kerfuffle": {},
+	"sharbert":  {},
+	"fornax":    {},
+}
+
+func validateChirp(chirp string) (string, error) {
+	if len(chirp) > 140 {
+		return "", fmt.Errorf("Chirp is too long")
+	}
+
+	if len(chirp) == 0 {
+		return "", fmt.Errorf("Chirp is empty")
+	}
+
+	words := strings.Split(chirp, " ")
+
+	for i, w := range words {
+		if w == "" {
+			continue
+		}
+
+		if _, ok := invalidWords[strings.ToLower(w)]; ok {
+			words[i] = "****"
+		}
+	}
+
+	return strings.Join(words, " "), nil
+}
+
+func (conf *apiConfig) handleAddChirp(w http.ResponseWriter, req *http.Request) {
+	defer closeReqBody(req)
+
+	content := struct {
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
+	}{}
+
+	dec := json.NewDecoder(req.Body)
+	if err := dec.Decode(&content); err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
+	chirp, err := validateChirp(content.Body)
+	if err != nil {
+		err = respondError(w, http.StatusBadRequest, err.Error())
+		if err != nil {
+			log.Printf("respondError: %v", err)
+		}
+		return
+	}
+
+	res, err := conf.db.CreateChirp(req.Context(), database.CreateChirpParams{
+		Body:   chirp,
+		UserID: content.UserID,
+	})
+	if err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
+	err = respondJSON(w, http.StatusCreated, Chirp(res))
 	if err != nil {
 		log.Printf("respondJSON: %v", err)
 	}
