@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -43,11 +44,32 @@ func (conf *apiConfig) handleMetrics(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+const devEnv = "dev"
+
 func (conf *apiConfig) handleReset(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+
+	if env := os.Getenv("PLATFORM"); env != devEnv {
+		w.WriteHeader(http.StatusForbidden)
+
+		if _, err := w.Write([]byte(http.StatusText(http.StatusForbidden))); err != nil {
+			log.Printf("w.Write: %v", err)
+		}
+		return
+	}
+
+	if err := conf.db.ResetUsers(req.Context()); err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 
 	conf.fileserverHits.Store(0)
+
+	if _, err := w.Write([]byte(http.StatusText(http.StatusOK))); err != nil {
+		log.Printf("w.Write: %v", err)
+	}
 }
 
 var invalidWords = map[string]struct{}{
@@ -57,11 +79,7 @@ var invalidWords = map[string]struct{}{
 }
 
 func handleValidateChirp(w http.ResponseWriter, req *http.Request) {
-	defer func() {
-		if err := req.Body.Close(); err != nil {
-			log.Printf("req.Body.Close: %v", err)
-		}
-	}()
+	defer closeReqBody(req)
 
 	bod := struct {
 		Body string `json:"body"`
@@ -69,10 +87,7 @@ func handleValidateChirp(w http.ResponseWriter, req *http.Request) {
 
 	dec := json.NewDecoder(req.Body)
 	if err := dec.Decode(&bod); err != nil {
-		err = respondError(w, http.StatusInternalServerError, "Something went wrong")
-		if err != nil {
-			log.Printf("respondError: %v", err)
-		}
+		respondWithInternalError(w)
 		return
 	}
 
@@ -103,6 +118,42 @@ func handleValidateChirp(w http.ResponseWriter, req *http.Request) {
 	err := respondJSON(w, http.StatusOK, result{
 		CleanedBody: strings.Join(words, " "),
 	})
+	if err != nil {
+		log.Printf("respondJSON: %v", err)
+	}
+}
+
+func (conf *apiConfig) handleCreateUser(w http.ResponseWriter, req *http.Request) {
+	defer closeReqBody(req)
+
+	bod := struct {
+		Email string `json:"email"`
+	}{}
+
+	dec := json.NewDecoder(req.Body)
+	if err := dec.Decode(&bod); err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
+	if bod.Email == "" {
+		err := respondError(w, http.StatusBadRequest, "Email is required")
+		if err != nil {
+			log.Printf("respondError: %v", err)
+		}
+		return
+	}
+
+	var result User
+	user, err := conf.db.CreateUser(req.Context(), bod.Email)
+	if err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
+	result = User(user)
+
+	err = respondJSON(w, http.StatusCreated, result)
 	if err != nil {
 		log.Printf("respondJSON: %v", err)
 	}
