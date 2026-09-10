@@ -2,10 +2,17 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+
+	"github.com/andres-gr/go-server/internal/database"
 )
 
 func main() {
@@ -14,7 +21,23 @@ func main() {
 		rootDir = "."
 	)
 
-	conf := &apiConfig{}
+	if err := godotenv.Load(); err != nil {
+		log.Fatalf("godotenv.Load: %v", err)
+		os.Exit(1)
+	}
+
+	dbUri := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbUri)
+	if err != nil {
+		log.Fatalf("sql.Open: %v", err)
+		os.Exit(1)
+	}
+
+	dbQueries := database.New(db)
+	conf := &apiConfig{
+		db:             dbQueries,
+		fileserverHits: atomic.Int32{},
+	}
 
 	idleConnsClosed := make(chan struct{})
 	mux := http.NewServeMux()
