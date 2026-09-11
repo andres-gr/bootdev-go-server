@@ -179,3 +179,48 @@ func (conf *apiConfig) handleAddChirp(w http.ResponseWriter, req *http.Request) 
 		log.Printf("respondJSON: %v", err)
 	}
 }
+
+func (conf *apiConfig) handleGetChirps(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	res, err := conf.db.GetChirps(req.Context())
+	if err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
+	var chirps []Chirp
+
+	for _, chirp := range res {
+		chirps = append(chirps, Chirp(chirp))
+	}
+
+	err = respondJSON(w, http.StatusOK, chirps)
+	if err != nil {
+		log.Printf("respondJSON: %v", err)
+	}
+}
+
+func (conf *apiConfig) handleGetChirp(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	id, err := uuid.Parse(req.PathValue("id"))
+	if err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
+	res, err := conf.db.GetChirp(req.Context(), id)
+	if err != nil {
+		err = respondError(w, http.StatusNotFound, err.Error())
+		if err != nil {
+			log.Printf("respondError: %v", err)
+		}
+		return
+	}
+
+	err = respondJSON(w, http.StatusOK, Chirp(res))
+	if err != nil {
+		log.Printf("respondJSON: %v", err)
+	}
+}
