@@ -37,6 +37,7 @@ func main() {
 	conf := &apiConfig{
 		db:             dbQueries,
 		fileserverHits: atomic.Int32{},
+		jwtSecret:      os.Getenv("JWT_SECRET"),
 	}
 
 	idleConnsClosed := make(chan struct{})

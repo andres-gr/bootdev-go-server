@@ -41,11 +41,12 @@ func respondWithInternalError(w http.ResponseWriter) {
 	}
 }
 
-func cleanUserResponse(user database.User) User {
+func cleanUserResponse(user database.User, token string) User {
 	return User{
 		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email,
+		Token:     token,
 	}
 }

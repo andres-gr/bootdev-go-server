@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -104,8 +105,8 @@ func (conf *apiConfig) handleCreateUser(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	if len(bod.Password) < 6 || strings.Contains(bod.Password, " ") || len(bod.Password) > 16 {
-		err := respondError(w, http.StatusBadRequest, "Password must be between 6 and 16 characters and cannot contain spaces")
+	if len(bod.Password) < 3 || strings.Contains(bod.Password, " ") || len(bod.Password) > 16 {
+		err := respondError(w, http.StatusBadRequest, "Password must be between 3 and 16 characters and cannot contain spaces")
 		if err != nil {
 			log.Printf("respondError: %v", err)
 		}
@@ -127,9 +128,27 @@ func (conf *apiConfig) handleCreateUser(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	result := User(user)
+	token, err := auth.MakeJWT(user.ID, conf.jwtSecret, time.Hour)
+	if err != nil {
+		respondWithInternalError(w)
+		return
+	}
 
-	err = respondJSON(w, http.StatusCreated, result)
+	res := struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+		Token     string    `json:"token"`
+	}{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
+		Token:     token,
+	}
+
+	err = respondJSON(w, http.StatusCreated, res)
 	if err != nil {
 		log.Printf("respondJSON: %v", err)
 	}
@@ -140,8 +159,9 @@ func (conf *apiConfig) handleLoginUser(w http.ResponseWriter, req *http.Request)
 	defer closeReqBody(req)
 
 	bod := struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
 	}{}
 
 	dec := json.NewDecoder(req.Body)
@@ -178,7 +198,18 @@ func (conf *apiConfig) handleLoginUser(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	res := cleanUserResponse(user)
+	expires := time.Duration(bod.ExpiresInSeconds) * time.Second
+	if expires == 0 || expires > time.Hour {
+		expires = time.Hour
+	}
+
+	token, err := auth.MakeJWT(user.ID, conf.jwtSecret, expires)
+	if err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
+	res := cleanUserResponse(user, token)
 
 	err = respondJSON(w, http.StatusOK, res)
 	if err != nil {
@@ -220,9 +251,23 @@ func validateChirp(chirp string) (string, error) {
 func (conf *apiConfig) handleAddChirp(w http.ResponseWriter, req *http.Request) {
 	defer closeReqBody(req)
 
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithInternalError(w)
+		return
+	}
+
+	id, err := auth.ValidateJWT(token, conf.jwtSecret)
+	if err != nil {
+		err = respondError(w, http.StatusUnauthorized, err.Error())
+		if err != nil {
+			log.Printf("respondError: %v", err)
+		}
+		return
+	}
+
 	content := struct {
-		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
 	}{}
 
 	dec := json.NewDecoder(req.Body)
@@ -242,7 +287,7 @@ func (conf *apiConfig) handleAddChirp(w http.ResponseWriter, req *http.Request) 
 
 	res, err := conf.db.CreateChirp(req.Context(), database.CreateChirpParams{
 		Body:   chirp,
-		UserID: content.UserID,
+		UserID: id,
 	})
 	if err != nil {
 		respondWithInternalError(w)
