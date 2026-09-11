@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+
+	"github.com/andres-gr/go-server/internal/database"
 )
 
 func respondJSON(w http.ResponseWriter, code int, payload interface{}) error {
@@ -36,5 +38,14 @@ func respondWithInternalError(w http.ResponseWriter) {
 	err := respondError(w, http.StatusInternalServerError, "Something went wrong")
 	if err != nil {
 		log.Printf("respondError: %v", err)
+	}
+}
+
+func cleanUserResponse(user database.User) User {
+	return User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
 	}
 }
