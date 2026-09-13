@@ -92,10 +92,7 @@ func (conf *apiConfig) handleCreateUser(w http.ResponseWriter, req *http.Request
 
 	defer closeReqBody(req, msg)
 
-	bod := struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}{}
+	var bod Login
 
 	dec := json.NewDecoder(req.Body)
 	if err := dec.Decode(&bod); err != nil {
@@ -160,16 +157,95 @@ func (conf *apiConfig) handleCreateUser(w http.ResponseWriter, req *http.Request
 	}
 }
 
+// PUT /api/users
+func (conf *apiConfig) handleUpdateUser(w http.ResponseWriter, req *http.Request) {
+	const msg = "PUT /api/users"
+
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		err = respondError(w, http.StatusUnauthorized, "invalid bearer token")
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg, err)
+		}
+		return
+	}
+
+	id, err := auth.ValidateJWT(token, conf.jwtSecret)
+	if err != nil {
+		err = respondError(w, http.StatusUnauthorized, "invalid bearer token")
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg, err)
+		}
+		return
+	}
+
+	defer closeReqBody(req, msg)
+
+	var bod Login
+
+	dec := json.NewDecoder(req.Body)
+	if err := dec.Decode(&bod); err != nil {
+		respondWithInternalError(w, msg)
+		return
+	}
+
+	if bod.Email == "" || bod.Password == "" {
+		err := respondError(w, http.StatusBadRequest, "Email and password are required")
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg, err)
+		}
+		return
+	}
+
+	if len(bod.Password) < 3 || strings.Contains(bod.Password, " ") || len(bod.Password) > 28 {
+		err := respondError(w, http.StatusBadRequest, "Password must be between 3 and 28 characters and cannot contain spaces")
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg, err)
+		}
+		return
+	}
+
+	pass, err := auth.HashPassword(bod.Password)
+	if err != nil {
+		respondWithInternalError(w, msg)
+		return
+	}
+
+	user, err := conf.db.UpdateUser(req.Context(), database.UpdateUserParams{
+		ID:             id,
+		Email:          bod.Email,
+		HashedPassword: pass,
+	})
+	if err != nil {
+		respondWithInternalError(w, msg)
+		return
+	}
+
+	res := struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
+	}
+
+	err = respondJSON(w, http.StatusOK, res)
+	if err != nil {
+		log.Printf("%s - respondJSON: %v", msg, err)
+	}
+}
+
 // POST /api/login
 func (conf *apiConfig) handleLoginUser(w http.ResponseWriter, req *http.Request) {
 	const msg = "POST /api/login"
 
 	defer closeReqBody(req, msg)
 
-	bod := struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}{}
+	var bod Login
 
 	dec := json.NewDecoder(req.Body)
 	if err := dec.Decode(&bod); err != nil {
@@ -408,10 +484,10 @@ func (conf *apiConfig) handleGetChirp(w http.ResponseWriter, req *http.Request) 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	id, err := uuid.Parse(req.PathValue("id"))
-	msg := "GET /api/chirps/" + id.String()
+	const msg = "GET /api/chirps/"
 
 	if err != nil {
-		respondWithInternalError(w, msg)
+		respondWithInternalError(w, msg+"unable to parse chirp ID")
 		return
 	}
 
@@ -426,6 +502,60 @@ func (conf *apiConfig) handleGetChirp(w http.ResponseWriter, req *http.Request) 
 
 	err = respondJSON(w, http.StatusOK, Chirp(res))
 	if err != nil {
-		log.Printf("%s - respondJSON: %v", msg, err)
+		log.Printf("%s - respondJSON: %v", msg+id.String(), err)
 	}
+}
+
+// DELETE /api/chirps/{id}
+func (conf *apiConfig) handleDeleteChirp(w http.ResponseWriter, req *http.Request) {
+	id, err := uuid.Parse(req.PathValue("id"))
+	const msg = "DELETE /api/chirps/"
+
+	if err != nil {
+		respondWithInternalError(w, msg+"unable to parse chirp ID")
+		return
+	}
+
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		err = respondError(w, http.StatusUnauthorized, err.Error())
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg+id.String(), err)
+		}
+		return
+	}
+
+	uId, err := auth.ValidateJWT(token, conf.jwtSecret)
+	if err != nil {
+		err = respondError(w, http.StatusUnauthorized, err.Error())
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg+id.String(), err)
+		}
+		return
+	}
+
+	chirp, err := conf.db.GetChirp(req.Context(), id)
+	if err != nil {
+		err = respondError(w, http.StatusNotFound, err.Error())
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg+id.String(), err)
+		}
+		return
+	}
+
+	if chirp.UserID != uId {
+		err = respondError(w, http.StatusForbidden, "Unauthorized to delete this chirp")
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg+id.String(), err)
+		}
+		return
+	}
+
+	err = conf.db.DeleteChirp(req.Context(), id)
+	if err != nil {
+		respondWithInternalError(w, msg+id.String())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

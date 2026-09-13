@@ -6,6 +6,11 @@ import (
 	"github.com/google/uuid"
 )
 
+type Login struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 type User struct {
 	ID           uuid.UUID `json:"id"`
 	CreatedAt    time.Time `json:"created_at"`
