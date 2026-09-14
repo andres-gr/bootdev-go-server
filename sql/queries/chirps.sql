@@ -9,8 +9,19 @@ SELECT
     *
 FROM
     chirps
+WHERE
+    CASE WHEN @author_id::uuid != '00000000-0000-0000-0000-000000000000' THEN
+        user_id = @author_id::uuid
+    ELSE
+        TRUE
+    END
 ORDER BY
-    created_at ASC;
+    CASE WHEN @sort::text = 'asc' THEN
+        created_at
+    END ASC,
+    CASE WHEN @sort::text = 'desc' THEN
+        created_at
+    END DESC;
 
 -- name: GetChirp :one
 SELECT

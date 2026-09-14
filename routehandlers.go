@@ -457,13 +457,32 @@ func (conf *apiConfig) handleAddChirp(w http.ResponseWriter, req *http.Request) 
 	}
 }
 
-// GET /api/chirps
+// GET /api/chirps?author_id&sort
 func (conf *apiConfig) handleGetChirps(w http.ResponseWriter, req *http.Request) {
 	const msg = "GET /api/chirps"
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	res, err := conf.db.GetChirps(req.Context())
+	var id uuid.UUID
+
+	if aId := req.URL.Query().Get("author_id"); aId != "" {
+		var err error
+		id, err = uuid.Parse(aId)
+		if err != nil {
+			respondWithInternalError(w, msg)
+			return
+		}
+	}
+
+	sort := "asc"
+	if s := req.URL.Query().Get("sort"); s != "" {
+		sort = s
+	}
+
+	res, err := conf.db.GetChirps(req.Context(), database.GetChirpsParams{
+		AuthorID: id,
+		Sort:     sort,
+	})
 	if err != nil {
 		respondWithInternalError(w, msg)
 		return
