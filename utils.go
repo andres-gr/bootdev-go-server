@@ -47,6 +47,7 @@ func cleanUserResponse(user database.User, token string, refresh string) User {
 		CreatedAt:    user.CreatedAt,
 		UpdatedAt:    user.UpdatedAt,
 		Email:        user.Email,
+		IsChirpyRed:  user.IsChirpyRed,
 		Token:        token,
 		RefreshToken: refresh,
 	}

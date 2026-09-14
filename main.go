@@ -38,6 +38,7 @@ func main() {
 		db:             dbQueries,
 		fileserverHits: atomic.Int32{},
 		jwtSecret:      os.Getenv("JWT_SECRET"),
+		polkaKey:       os.Getenv("POLKA_KEY"),
 	}
 
 	idleConnsClosed := make(chan struct{})
@@ -65,6 +66,8 @@ func main() {
 
 	mux.HandleFunc("GET /admin/metrics", conf.handleMetrics)
 	mux.HandleFunc("POST /admin/reset", conf.handleReset)
+
+	mux.HandleFunc("POST /api/polka/webhooks", conf.handlePolkaWebhooks)
 
 	go func() {
 		sigint := make(chan os.Signal, 1)

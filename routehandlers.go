@@ -138,17 +138,19 @@ func (conf *apiConfig) handleCreateUser(w http.ResponseWriter, req *http.Request
 	}
 
 	res := struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
-		Token     string    `json:"token"`
+		ID          uuid.UUID `json:"id"`
+		CreatedAt   time.Time `json:"created_at"`
+		UpdatedAt   time.Time `json:"updated_at"`
+		Email       string    `json:"email"`
+		Token       string    `json:"token"`
+		IsChirpyRed bool      `json:"is_chirpy_red"`
 	}{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email,
-		Token:     token,
+		ID:          user.ID,
+		CreatedAt:   user.CreatedAt,
+		UpdatedAt:   user.UpdatedAt,
+		Email:       user.Email,
+		Token:       token,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 
 	err = respondJSON(w, http.StatusCreated, res)
@@ -404,8 +406,6 @@ func validateChirp(chirp string) (string, error) {
 func (conf *apiConfig) handleAddChirp(w http.ResponseWriter, req *http.Request) {
 	const msg = "POST /api/chirps"
 
-	defer closeReqBody(req, msg)
-
 	token, err := auth.GetBearerToken(req.Header)
 	if err != nil {
 		respondWithInternalError(w, msg)
@@ -420,6 +420,8 @@ func (conf *apiConfig) handleAddChirp(w http.ResponseWriter, req *http.Request) 
 		}
 		return
 	}
+
+	defer closeReqBody(req, msg)
 
 	content := struct {
 		Body string `json:"body"`
@@ -555,6 +557,74 @@ func (conf *apiConfig) handleDeleteChirp(w http.ResponseWriter, req *http.Reques
 	if err != nil {
 		respondWithInternalError(w, msg+id.String())
 		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /api/polka/webhooks
+func (conf *apiConfig) handlePolkaWebhooks(w http.ResponseWriter, req *http.Request) {
+	const msg = "POST /api/polka/webhooks"
+
+	key, err := auth.GetApiKey(req.Header)
+	if err != nil {
+		err = respondError(w, http.StatusUnauthorized, err.Error())
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg, err)
+		}
+		return
+	}
+
+	if key != conf.polkaKey {
+		err = respondError(w, http.StatusUnauthorized, "Invalid API key")
+		if err != nil {
+			log.Printf("%s - respondError: %v", msg, err)
+		}
+		return
+	}
+
+	defer closeReqBody(req, msg)
+
+	var bod PolkaWebhook
+
+	dec := json.NewDecoder(req.Body)
+	if err := dec.Decode(&bod); err != nil {
+		respondWithInternalError(w, msg)
+		return
+	}
+
+	switch bod.Event {
+	case userUpgraded:
+		{
+			var data UserUpgradedData
+
+			if err := json.Unmarshal(bod.Data, &data); err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			if data.UserID == uuid.Nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			user, err := conf.db.GetUserById(req.Context(), data.UserID)
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			res, err := conf.db.SetUserChirpyRed(req.Context(), user.ID)
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			if !res.IsChirpyRed {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
